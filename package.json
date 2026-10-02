@@ -5,7 +5,7 @@
   "description": "GitHub 可视化登录：独立 Electron 工具 + DSH 宿主端插件（dsh plugin add 安装）",
   "main": "main.js",
   "exports": {
-    ".": "./lib/index.js",
+    ".": "./lib/index.mjs",
     "./package.json": "./package.json"
   },
   "dsh": {
