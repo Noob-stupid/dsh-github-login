@@ -9,7 +9,7 @@
  *
  * 另外两条是本 bug 的伴生判据：
  *   - 绝不允许再用官方 `@deepseek-ai/*` scope（那是根因）；
- *   - lib/ 里不允许出现机器专用硬编码路径（如 D:/dsh/...）。
+ *   - lib/ 里不允许出现机器专用硬编码路径（作者本机盘符路径那种形态）。
  *
  * 运行：npm test（零依赖，只用 node:test + node:assert）
  */
@@ -104,24 +104,19 @@ test('exports["."] 指向的入口文件真实存在', () => {
   assert.doesNotThrow(() => statSync(join(PACKAGE_ROOT, entry)), `exports["."] 指向的入口不存在：${entry}`)
 })
 
-test('lib/ 内不允许机器专用硬编码路径', (t) => {
+test('lib/ 内不允许机器专用硬编码路径', () => {
   const libDir = join(PACKAGE_ROOT, 'lib')
   const offenders = []
   for (const file of walkFiles(libDir)) {
     const text = readFileSync(file, 'utf8')
     for (const line of text.split(/\r?\n/)) {
-      // 盘符路径（D:/… 或 D:\…），排除 URL 里的 scheme（如 https://）。
+      // 盘符路径（形如 盘符 + 冒号 + 斜杠），排除 URL 里的 scheme（如 https://）。
       if (/(^|[^A-Za-z0-9+.-])[A-Za-z]:[\\/]/.test(line)) {
         offenders.push(`${relative(PACKAGE_ROOT, file)}: ${line.trim()}`)
       }
     }
   }
-  if (offenders.length > 0) {
-    // 已知问题：loginToolCandidates() 里带作者本机路径，属跨平台可用性缺陷
-    // （issue #1 中 dr1am1 已指出）。本 PR 范围是身份不一致，故不顺手改动，
-    // 只如实标记，避免把既有缺陷伪装成绿色。
-    t.skip(`已知机器专用硬编码路径（另案处理）：\n${offenders.join('\n')}`)
-    return
-  }
-  assert.deepEqual(offenders, [])
+  // 1.0.1 时这里是 t.skip（把缺陷标成"已知问题"）；1.0.2 已把作者本机路径删掉，
+  // 改为真断言：再写回任何机器专用路径都必须让测试变红。
+  assert.deepEqual(offenders, [], `lib/ 内出现机器专用硬编码路径：\n${offenders.join('\n')}`)
 })

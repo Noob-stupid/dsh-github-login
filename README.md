@@ -21,12 +21,41 @@
 dsh plugin --profile web add github:Noob-stupid/dsh-github-login
 ```
 
-宿主端环回接口：
+**装完怎么用**：登录窗口由独立的历史可执行文件承载，但这个 exe **不用你手动找** ——
+第一次点"登录 GitHub"时，插件会自己从本仓库 Release 下载它，**边下边校验 SHA-256**，
+校验通过才落盘，然后启动窗口：
+
+```
+下载地址：https://github.com/Noob-stupid/dsh-github-login/releases/latest/download/DSH-GitHub-Login.exe
+落盘位置：<DSH_HOME>/dsh-github-login/DSH-GitHub-Login.exe   （DSH_HOME 缺省 ~/.dsh）
+校验和：  同目录的 DSH-GitHub-Login.exe.sha256；不符即拒用，绝不启动可疑文件
+```
+
+首次会自动下载（约 71 MB），下载完**提示再点一次登录**就开窗口。自动下载不可用
+（网络受限 / 镜像源）时不会静默失败，而是给出一条能照着做的指引，你也可以手动装：
+
+```sh
+# 1) 下载 exe 与它的校验和（想校验就先核对 sha256）
+#    两个文件都在 Release 页面：https://github.com/Noob-stupid/dsh-github-login/releases/latest
+# 2) 放到规范位置
+#    Windows: %DSH_HOME%\dsh-github-login\DSH-GitHub-Login.exe   （缺省 %USERPROFILE%\.dsh\...）
+#    Linux/macOS: $DSH_HOME/dsh-github-login/DSH-GitHub-Login.exe
+# 3) 也可以不复位：用环境变量把路径/镜像源告诉插件
+#    DSH_GITHUB_LOGIN_EXE=<你放 exe 的绝对路径>
+#    DSH_GITHUB_LOGIN_RELEASE_BASE_URL=<镜像源或自建分发站的 .../latest/download 基址>
+```
+
+宿主端环回接口（都只允许本机访问）：
 
 - `GET  /github-auth/status` → `{ok, loggedIn, login}`（只含账号名，绝不下发令牌）
-- `POST /github-auth/open`   → 唤起登录工具窗口（本机存在 exe 时直接启动）
+- `POST /github-auth/open`   → 没有工具就先自动下载（校验 sha256）、再唤起窗口；
+  拿不到工具时回 `{ok:true, launched:false, hint:"…"}`，hint 就是上面那份手动指引
+- `GET  /github-auth/tool`   → 工具自查：在不在、装在哪、候选列表、是否正在下载
 
-独立工具用法（不带 DSH 也行）：
+> 说明：设备码流程本身（请求设备码、轮询、写令牌、同步 gh）**全部是 JS 实现的**，
+> exe 只是承载这套界面的独立窗口；令牌文件与插件共享，所以登录一次两边都认。
+
+独立工具用法（不带 DSH 也行）：下载 Release 里的 `DSH-GitHub-Login.exe` 直接运行。
 
 ## 功能
 
@@ -55,10 +84,20 @@ npm run dist       # 打包为便携版单文件 exe（dist/DSH-GitHub-Login.exe
 ## 集成到其他应用（如桌面客户端）
 
 把它当作一个独立进程调用即可：登录状态通过同一份文件（`~/.dsh/github-auth.json`）
-共享，任何 DSH 生态工具都能读取：
+共享，任何 DSH 生态工具都能读取。可执行文件的规范落点是
+`<DSH_HOME>/dsh-github-login/DSH-GitHub-Login.exe`（`DSH_HOME` 缺省为 `~/.dsh`），
+自己写的调用方照这个位置拼路径就行：
 
 ```js
-spawn('<path>/DSH-GitHub-Login.exe', [], { windowsHide: false })
+import { homedir } from 'node:os'
+import { join } from 'node:path'
+import { spawn } from 'node:child_process'
+
+const dshHome = process.env.DSH_HOME || join(homedir(), '.dsh')
+const exe = process.env.DSH_GITHUB_LOGIN_EXE // 可选：显式指定 exe 路径
+  || join(dshHome, 'dsh-github-login', 'DSH-GitHub-Login.exe')
+
+spawn(exe, [], { detached: true, stdio: 'ignore', windowsHide: false }).unref()
 ```
 
 之后用 `gh auth status` 或直接读取 `~/.dsh/github-auth.json` 验证登录状态。
@@ -84,6 +123,13 @@ GitHub Device Flow：
 
 遇到问题先看这里；仍有疑问请到 [议题](https://github.com/Noob-stupid/dsh-github-login/issues) 提问。
 
+- **点了登录，提示"正在下载登录工具"**：正常现象 —— 首次使用要拉一次约 71 MB 的 exe，
+  下完提示"再点一次登录"即可开窗口。
+- **自动下载失败**：按提示里的手动指引装（Release 下载 + 放到规范位置），
+  或用 `DSH_GITHUB_LOGIN_EXE` / `DSH_GITHUB_LOGIN_RELEASE_BASE_URL` 指路。
+  失败原因会原样写在提示里（下载 404 / 校验和不符 / 网络不可达），不会静默。
+- **sha256 校验不符**：插件会**拒绝启用**那个文件并把它删掉，绝不启动 ——
+  说明拿到的不是我们发布的东西（下载被劫持/镜像源陈旧）。此时请从官方 Release 重下。
 - **一直"等待授权"**：轮询与浏览器共用同一网络通道，浏览器能打开 GitHub 就一定能完成；
   提示行会显示轮询次数，卡住时把提示文字发到 Issue。
 - **显示 unknown**：授权已成功、令牌已保存，只是用户名查询失败；重启程序后状态页会重试。
